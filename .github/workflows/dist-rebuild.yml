@@ -1,0 +1,112 @@
+name: Dist rebuild
+
+# Rebuild and commit dist/ on any same-repo PR where the committed
+# bundle has drifted from source. Keeps CI's "Verify dist is up to
+# date" gate green on bot PRs (Renovate/Dependabot don't run the
+# pre-push lefthook) and provides a safety net on human PRs.
+#
+# Fork PRs are skipped: we can't push to a fork branch from this
+# repo's workflow, and executing fork build scripts here would be
+# unsafe.
+#
+# Pushes use a GitHub App token (not GITHUB_TOKEN) so that the rebuild
+# commit re-triggers CI on the PR. The same App backs the other internal
+# workflows (release, self-test, self-apply, drift-check); only contents
+# write is exercised here. Requires:
+#   - repo variable BOT_CLIENT_ID
+#   - repo secret   BOT_APP_PRIVATE_KEY
+#
+# Security posture: the App token is minted AFTER untrusted PR code
+# (install scripts, build script) has executed; checkout does not
+# persist credentials; lifecycle scripts are blocked via
+# --ignore-scripts; push uses an explicit Authorization header rather
+# than relying on git config. This keeps push credentials out of reach
+# of anything PR-controlled. CodeQL's actions/untrusted-checkout/medium
+# flags the pattern (any pull_request workflow with explicit PR-head
+# checkout trips the heuristic); we match github/codeql-action's own
+# rebuild.yml pattern and dismiss the alert.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: dist-rebuild-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  rebuild:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            registry.npmjs.org:443
+
+      # No token, no persisted credentials: everything below runs
+      # untrusted PR code and must not have access to push secrets.
+      - name: Checkout PR head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@078e9d416474b29c0c387560859308974f7e9c53 # v6.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      # --ignore-scripts prevents lifecycle scripts (install/prepare) in
+      # untrusted PR deps from executing.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Rebuild bundle
+        run: pnpm run build
+
+      - name: Check if dist changed
+        id: diff
+        run: |
+          if git diff --quiet -- dist; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # All untrusted PR code has finished executing before this point.
+      - name: Mint App token
+        if: steps.diff.outputs.changed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ vars.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+
+      - name: Commit and push dist
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          BOT_USER="${APP_SLUG}[bot]"
+          BOT_ID=$(gh api "/users/${BOT_USER}" --jq .id)
+          git config core.hooksPath /dev/null
+          git config user.name "${BOT_USER}"
+          git config user.email "${BOT_ID}+${BOT_USER}@users.noreply.github.com"
+          git add dist
+          git commit -m 'build(deps): regenerate dist bundle'
+          git -c http.extraHeader="Authorization: Bearer ${GH_TOKEN}" \
+            push "https://github.com/${REPO}.git" "HEAD:refs/heads/${BRANCH}"

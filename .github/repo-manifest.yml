@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/danburtenshaw/repo-manifest/main/schema/v1.json
+version: 1
+
+metadata:
+  description: "Keep GitHub repository settings in sync with a declarative config file."
+  homepage: "https://github.com/danburtenshaw/repo-manifest"
+  topics:
+    - github
+    - github-action
+    - devops
+    - settings
+    - declarative
+  visibility: public
+
+features:
+  issues: true
+  wiki: false
+  projects: false
+  discussions: false
+
+merge:
+  allow_squash: true
+  allow_merge_commit: false
+  allow_rebase: false
+  allow_auto_merge: true
+  delete_branch_on_merge: true
+  squash_commit_title: PR_TITLE
+  squash_commit_message: PR_BODY
+
+security:
+  vulnerability_alerts: true
+  automated_security_fixes: true
+  secret_scanning: true
+  secret_scanning_push_protection: true
+
+labels:
+  # Let bot-managed labels stay around.
+  ignore_patterns:
+    - "dependencies"
+    - "renovate/*"
+    - "autorelease: *"
+  items:
+    - name: bug
+      color: d73a4a
+      description: "Something isn't working"
+    - name: enhancement
+      color: a2eeef
+      description: "New feature or request"
+    - name: documentation
+      color: 0075ca
+      description: "Improvements or additions to documentation"
+    - name: good first issue
+      color: 7057ff
+      description: "Good for newcomers"
+    - name: help wanted
+      color: 008672
+      description: "Extra attention is needed"
+    - name: question
+      color: d876e3
+      description: "Further information is requested"
+    - name: security
+      color: ee0701
+      description: "Security-related issue"
+
+variables:
+  items:
+    # Client ID for the GitHub App that backs all internal workflows —
+    # public identifier, safe as a variable. Private key is a secret.
+    - name: BOT_CLIENT_ID
+      value: "Iv23liOdA0GXBSPqDOX7"
+
+secrets:
+  items:
+    # Private key for the GitHub App that backs all internal workflows
+    # (dist-rebuild, release, self-test, self-apply, drift-check).
+    - name: BOT_APP_PRIVATE_KEY
+      source: manual
+    # Fine-grained PAT used by the e2e workflow to exercise the Action
+    # against the sandbox repo. Consumed by .github/workflows/e2e.yml.
+    - name: E2E_TOKEN
+      source: manual
+
+rulesets:
+  # Default-branch protection. Admins bypass so one-off direct
+  # commits (e.g., correcting a typo in main) still work; everyone
+  # else goes through a PR.
+  - name: main-branch-protection
+    target: branch
+    enforcement: active
+    conditions:
+      ref_name:
+        include: ["~DEFAULT_BRANCH"]
+        exclude: []
+    rules:
+      pull_request:
+        required_approving_review_count: 1
+        dismiss_stale_reviews_on_push: true
+        require_code_owner_review: true
+        require_last_push_approval: true
+      required_status_checks:
+        strict_required_status_checks_policy: true
+        required_checks:
+          - context: check
+          - context: Analyze (javascript-typescript)
+          - context: Analyze (actions)
+          - context: review
+      code_scanning:
+        tools:
+          - tool: CodeQL
+            security_alerts_threshold: medium_or_higher
+            alerts_threshold: errors
+      non_fast_forward: true
+      deletion: true
+      required_linear_history: true
+    bypass_actors:
+      # Repository admin role bypasses always (role IDs: 1=read,
+      # 2=triage, 3=write, 4=maintain, 5=admin).
+      - actor_type: RepositoryRole
+        actor_id: 5
+        bypass_mode: always

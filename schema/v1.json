@@ -1,0 +1,458 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 350
+        },
+        "homepage": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "topics": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,49}$"
+          }
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "public",
+            "private",
+            "internal"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "issues": {
+          "type": "boolean"
+        },
+        "wiki": {
+          "type": "boolean"
+        },
+        "projects": {
+          "type": "boolean"
+        },
+        "discussions": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "merge": {
+      "type": "object",
+      "properties": {
+        "allow_squash": {
+          "type": "boolean"
+        },
+        "allow_merge_commit": {
+          "type": "boolean"
+        },
+        "allow_rebase": {
+          "type": "boolean"
+        },
+        "allow_auto_merge": {
+          "type": "boolean"
+        },
+        "delete_branch_on_merge": {
+          "type": "boolean"
+        },
+        "squash_commit_title": {
+          "type": "string",
+          "enum": [
+            "PR_TITLE",
+            "COMMIT_OR_PR_TITLE"
+          ]
+        },
+        "squash_commit_message": {
+          "type": "string",
+          "enum": [
+            "PR_BODY",
+            "COMMIT_MESSAGES",
+            "BLANK"
+          ]
+        },
+        "merge_commit_title": {
+          "type": "string",
+          "enum": [
+            "PR_TITLE",
+            "MERGE_MESSAGE"
+          ]
+        },
+        "merge_commit_message": {
+          "type": "string",
+          "enum": [
+            "PR_BODY",
+            "PR_TITLE",
+            "BLANK"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "security": {
+      "type": "object",
+      "properties": {
+        "vulnerability_alerts": {
+          "type": "boolean"
+        },
+        "automated_security_fixes": {
+          "type": "boolean"
+        },
+        "secret_scanning": {
+          "type": "boolean"
+        },
+        "secret_scanning_push_protection": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "labels": {
+      "type": "object",
+      "properties": {
+        "ignore_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{6}$"
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 100
+              }
+            },
+            "required": [
+              "name",
+              "color"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "rulesets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "default": "branch",
+            "type": "string",
+            "enum": [
+              "branch",
+              "tag"
+            ]
+          },
+          "enforcement": {
+            "default": "active",
+            "type": "string",
+            "enum": [
+              "disabled",
+              "active",
+              "evaluate"
+            ]
+          },
+          "conditions": {
+            "type": "object",
+            "properties": {
+              "ref_name": {
+                "type": "object",
+                "properties": {
+                  "include": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "exclude": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "rules": {
+            "type": "object",
+            "properties": {
+              "pull_request": {
+                "type": "object",
+                "properties": {
+                  "required_approving_review_count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10
+                  },
+                  "dismiss_stale_reviews_on_push": {
+                    "type": "boolean"
+                  },
+                  "require_code_owner_review": {
+                    "type": "boolean"
+                  },
+                  "require_last_push_approval": {
+                    "type": "boolean"
+                  },
+                  "required_review_thread_resolution": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "required_status_checks": {
+                "type": "object",
+                "properties": {
+                  "strict_required_status_checks_policy": {
+                    "type": "boolean"
+                  },
+                  "required_checks": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "context": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "integration_id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "context"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "code_scanning": {
+                "type": "object",
+                "properties": {
+                  "tools": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tool": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "alerts_threshold": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "errors",
+                            "errors_and_warnings",
+                            "all"
+                          ]
+                        },
+                        "security_alerts_threshold": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "critical",
+                            "high_or_higher",
+                            "medium_or_higher",
+                            "all"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "tool",
+                        "alerts_threshold",
+                        "security_alerts_threshold"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "tools"
+                ],
+                "additionalProperties": false
+              },
+              "non_fast_forward": {
+                "type": "boolean"
+              },
+              "deletion": {
+                "type": "boolean"
+              },
+              "creation": {
+                "type": "boolean"
+              },
+              "update": {
+                "type": "boolean"
+              },
+              "required_signatures": {
+                "type": "boolean"
+              },
+              "required_linear_history": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "bypass_actors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actor_id": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "actor_type": {
+                  "type": "string",
+                  "enum": [
+                    "RepositoryRole",
+                    "Team",
+                    "Integration",
+                    "OrganizationAdmin",
+                    "DeployKey"
+                  ]
+                },
+                "bypass_mode": {
+                  "type": "string",
+                  "enum": [
+                    "always",
+                    "pull_request"
+                  ]
+                }
+              },
+              "required": [
+                "actor_type",
+                "bypass_mode"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "variables": {
+      "type": "object",
+      "properties": {
+        "ignore_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "secrets": {
+      "type": "object",
+      "properties": {
+        "ignore_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              "source": {
+                "default": "manual",
+                "type": "string",
+                "const": "manual"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "additionalProperties": false,
+  "$id": "https://raw.githubusercontent.com/danburtenshaw/repo-manifest/main/schema/v1.json",
+  "title": "repo-manifest v1",
+  "description": "Declarative GitHub repository settings managed by repo-manifest."
+}

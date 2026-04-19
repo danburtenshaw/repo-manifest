@@ -1,0 +1,9 @@
+version: 1
+metadata:
+  description: "A sample repository"
+  homepage: "https://example.com"
+  topics:
+    - github
+    - tooling
+    - devops
+  visibility: public

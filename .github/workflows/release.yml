@@ -1,0 +1,212 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  # Recovery entrypoint: re-run e2e-gate / attest-dist / tag-major against an
+  # existing release tag when the normal push path didn't complete them (e.g.
+  # a release merged but downstream jobs were blocked). release-please is
+  # skipped on this trigger — we're not creating a new release.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to re-run post-release jobs for (e.g. v1.0.0)"
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    # Runs on every trigger. On workflow_dispatch there are no new commits,
+    # so the action is a no-op (release_created=false) — the `resolve` job
+    # below falls back to the dispatched tag input in that case.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      major: ${{ steps.release.outputs.major }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
+      # App token so the release PR and tag trigger workflows;
+      # GITHUB_TOKEN-authored events don't.
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ vars.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  resolve:
+    # Unify outputs from the two triggers so downstream jobs have one source
+    # of truth. On push: forward release-please's outputs when a release was
+    # created. On workflow_dispatch: treat the supplied tag as the release
+    # target and derive the major from it. `should_run` is the single gate
+    # for every downstream job.
+    needs: release-please
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      should_run: ${{ steps.compute.outputs.should_run }}
+      tag_name: ${{ steps.compute.outputs.tag_name }}
+      major: ${{ steps.compute.outputs.major }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
+      - name: Compute outputs
+        id: compute
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RP_CREATED: ${{ needs.release-please.outputs.release_created }}
+          RP_TAG: ${{ needs.release-please.outputs.tag_name }}
+          RP_MAJOR: ${{ needs.release-please.outputs.major }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            if [[ ! "${INPUT_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::tag input '${INPUT_TAG}' must match vMAJOR.MINOR.PATCH"
+              exit 1
+            fi
+            MAJOR="${INPUT_TAG#v}"; MAJOR="${MAJOR%%.*}"
+            {
+              echo "should_run=true"
+              echo "tag_name=${INPUT_TAG}"
+              echo "major=${MAJOR}"
+            } >> "${GITHUB_OUTPUT}"
+          elif [[ "${RP_CREATED}" == "true" ]]; then
+            {
+              echo "should_run=true"
+              echo "tag_name=${RP_TAG}"
+              echo "major=${RP_MAJOR}"
+            } >> "${GITHUB_OUTPUT}"
+          else
+            echo "should_run=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+  e2e-gate:
+    # Block major-tag movement unless the latest scheduled E2E run on main
+    # was recent and successful. Defends the v<major> floating tag from
+    # regressions surfaced after the merge to main.
+    needs: resolve
+    if: needs.resolve.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Checkout (gate script only)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            test/e2e/scripts
+
+      - name: Check latest E2E status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: test/e2e/scripts/check-e2e-status.sh
+
+  attest-dist:
+    # Publish a Sigstore build-provenance attestation for the shipped
+    # bundle at the release tag. Consumers can verify with
+    # `gh attestation verify dist/index.mjs --repo <owner>/<repo>`.
+    needs: [resolve, e2e-gate]
+    if: needs.resolve.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout release tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.resolve.outputs.tag_name }}
+          persist-credentials: false
+
+      - name: Attest dist bundle
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: dist/index.mjs
+
+  tag-major:
+    # The bot app needs `workflows:write` in addition to `contents:write`
+    # because the tag points at a tree containing `.github/workflows/*`;
+    # GitHub gates ref writes that could redirect workflow consumers.
+    needs: [resolve, e2e-gate, attest-dist]
+    if: needs.resolve.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ vars.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+
+      - name: Update floating vMAJOR tag
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG_NAME: ${{ needs.resolve.outputs.tag_name }}
+          MAJOR: ${{ needs.resolve.outputs.major }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          SHA=$(gh api "repos/${REPO}/git/ref/tags/${TAG_NAME}" --jq '.object.sha')
+          if gh api "repos/${REPO}/git/ref/tags/v${MAJOR}" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/${REPO}/git/refs/tags/v${MAJOR}" \
+              -f sha="${SHA}" -F force=true
+          else
+            gh api -X POST "repos/${REPO}/git/refs" \
+              -f ref="refs/tags/v${MAJOR}" -f sha="${SHA}"
+          fi

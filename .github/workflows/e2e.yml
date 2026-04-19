@@ -1,0 +1,303 @@
+name: E2E
+
+# Runs the action against a dedicated sandbox repo (danburtenshaw/repo-manifest-e2e)
+# across a matrix of scenarios. See test/e2e/README.md for design.
+
+on:
+  schedule:
+    # Nightly at 04:00 UTC — early enough that a failure has business-hours
+    # lead time before the next release gate runs.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Scenario to run (omit or 'all' for full matrix)"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - metadata
+          - features
+          - merge
+          - security
+          - labels-reconcile
+          - labels-ignore-patterns
+          - variables-reconcile
+          - secrets-reconcile
+          - rulesets-main
+
+permissions: {}
+
+concurrency:
+  group: e2e-sandbox
+  cancel-in-progress: false
+
+jobs:
+  # Validate the dispatch input and emit a concrete scenario list.
+  # `type: choice` already restricts the UI, but we re-validate here so an
+  # adversarial API-level dispatch can't inject into matrix values.
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      scenarios: ${{ steps.pick.outputs.scenarios }}
+    steps:
+      - id: pick
+        env:
+          INPUT: ${{ github.event.inputs.scenario }}
+        run: |
+          set -euo pipefail
+          all='["metadata","features","merge","security","labels-reconcile","labels-ignore-patterns","variables-reconcile","secrets-reconcile","rulesets-main"]'
+          case "${INPUT:-all}" in
+            all|"")
+              scenarios="${all}"
+              ;;
+            metadata|features|merge|security|labels-reconcile|labels-ignore-patterns|variables-reconcile|secrets-reconcile|rulesets-main)
+              scenarios="[\"${INPUT}\"]"
+              ;;
+            *)
+              echo "::error::unknown scenario: ${INPUT}"
+              exit 1
+              ;;
+          esac
+          echo "scenarios=${scenarios}" >>"${GITHUB_OUTPUT}"
+
+  scenario:
+    needs: select
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        scenario: ${{ fromJSON(needs.select.outputs.scenarios) }}
+    permissions:
+      contents: read
+    env:
+      # Retarget the action at the sandbox via an internal backdoor env var.
+      # We can't override GITHUB_REPOSITORY directly: the Actions runner
+      # re-sets it on every `uses:` action step, ignoring job-level env.
+      # REPO_MANIFEST_TARGET is a custom name, so the override sticks, and
+      # src/index.ts checks it first in resolveRepoRef().
+      REPO_MANIFEST_TARGET: danburtenshaw/repo-manifest-e2e
+      SANDBOX_REPO: danburtenshaw/repo-manifest-e2e
+      SCENARIO: ${{ matrix.scenario }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Checkout action code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Resolve scenario dir
+        id: dir
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          set -euo pipefail
+          # Defence in depth: ensure SCENARIO matches a known directory.
+          case "${SCENARIO}" in
+            metadata|features|merge|security|labels-reconcile|labels-ignore-patterns|variables-reconcile|secrets-reconcile|rulesets-main)
+              ;;
+            *)
+              echo "::error::unknown scenario '${SCENARIO}'"
+              exit 1
+              ;;
+          esac
+          echo "path=test/e2e/scenarios/${SCENARIO}" >>"${GITHUB_OUTPUT}"
+
+      - name: Reset sandbox to baseline
+        uses: ./
+        with:
+          token: ${{ secrets.E2E_TOKEN }}
+          config: test/e2e/scenarios/baseline/manifest.yml
+          mode: apply
+          comment-on-pr: "false"
+
+      - name: Seed out-of-band state
+        env:
+          E2E_TOKEN: ${{ secrets.E2E_TOKEN }}
+          SCENARIO_DIR: ${{ steps.dir.outputs.path }}
+        run: |
+          set -euo pipefail
+          if [[ -x "${SCENARIO_DIR}/seed.sh" ]]; then
+            echo "running ${SCENARIO_DIR}/seed.sh"
+            "${SCENARIO_DIR}/seed.sh"
+          else
+            echo "no seed.sh; skipping"
+          fi
+
+      - name: Apply scenario
+        id: apply
+        uses: ./
+        with:
+          token: ${{ secrets.E2E_TOKEN }}
+          config: ${{ steps.dir.outputs.path }}/manifest.yml
+          mode: apply
+          comment-on-pr: "false"
+
+      # GitHub's REST API has a short eventual-consistency window between a
+      # PATCH and subsequent GETs (seen on has_issues / has_wiki in the
+      # `features` scenario). Retry plan up to 3 times with backoff before
+      # declaring the scenario non-idempotent.
+      - name: Assert idempotency (attempt 1)
+        id: idempotency1
+        uses: ./
+        with:
+          token: ${{ secrets.E2E_TOKEN }}
+          config: ${{ steps.dir.outputs.path }}/manifest.yml
+          mode: plan
+          comment-on-pr: "false"
+
+      - name: Wait before idempotency retry (attempt 2)
+        if: steps.idempotency1.outputs.changed != 'false'
+        run: |
+          echo "plan after apply reported changes; waiting 5s for API consistency"
+          sleep 5
+
+      - name: Assert idempotency (attempt 2)
+        id: idempotency2
+        if: steps.idempotency1.outputs.changed != 'false'
+        uses: ./
+        with:
+          token: ${{ secrets.E2E_TOKEN }}
+          config: ${{ steps.dir.outputs.path }}/manifest.yml
+          mode: plan
+          comment-on-pr: "false"
+
+      - name: Wait before idempotency retry (attempt 3)
+        if: steps.idempotency1.outputs.changed != 'false' && steps.idempotency2.outputs.changed != 'false'
+        run: |
+          echo "plan still reports changes after 5s; waiting 15s for API consistency"
+          sleep 15
+
+      - name: Assert idempotency (attempt 3)
+        id: idempotency3
+        if: steps.idempotency1.outputs.changed != 'false' && steps.idempotency2.outputs.changed != 'false'
+        uses: ./
+        with:
+          token: ${{ secrets.E2E_TOKEN }}
+          config: ${{ steps.dir.outputs.path }}/manifest.yml
+          mode: plan
+          comment-on-pr: "false"
+
+      - name: Fail if idempotency check reported changes after 3 attempts
+        if: >-
+          steps.idempotency1.outputs.changed != 'false' &&
+          steps.idempotency2.outputs.changed != 'false' &&
+          steps.idempotency3.outputs.changed != 'false'
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          CHANGED: ${{ steps.idempotency3.outputs.changed }}
+        run: |
+          echo "::error::scenario '${SCENARIO}' is not idempotent: plan after apply reports changed=${CHANGED} across 3 attempts"
+          exit 1
+
+      - name: Assert no drift against manifest
+        uses: ./
+        with:
+          token: ${{ secrets.E2E_TOKEN }}
+          config: ${{ steps.dir.outputs.path }}/manifest.yml
+          mode: drift
+          fail-on-drift: "true"
+          comment-on-pr: "false"
+
+      - name: Run scenario verify.sh
+        env:
+          E2E_TOKEN: ${{ secrets.E2E_TOKEN }}
+          SCENARIO_DIR: ${{ steps.dir.outputs.path }}
+        run: |
+          set -euo pipefail
+          if [[ -x "${SCENARIO_DIR}/verify.sh" ]]; then
+            echo "running ${SCENARIO_DIR}/verify.sh"
+            "${SCENARIO_DIR}/verify.sh"
+          else
+            echo "no verify.sh; skipping"
+          fi
+
+      - name: Reset sandbox to baseline (cleanup)
+        if: always()
+        uses: ./
+        with:
+          token: ${{ secrets.E2E_TOKEN }}
+          config: test/e2e/scenarios/baseline/manifest.yml
+          mode: apply
+          comment-on-pr: "false"
+
+  report:
+    needs: scenario
+    if: always() && needs.scenario.result == 'failure' && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Open or update failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          JOB_RESULT: ${{ needs.scenario.result }}
+        run: |
+          set -euo pipefail
+
+          today="$(date -u +%Y-%m-%d)"
+          title="E2E failure: scheduled run on ${today}"
+          body=$(cat <<EOF
+          The scheduled E2E run failed. This issue is auto-managed by \`.github/workflows/e2e.yml\`.
+
+          - **Run:** ${RUN_URL}
+          - **Commit:** \`${COMMIT_SHA}\`
+          - **Scenarios job result:** ${JOB_RESULT}
+
+          cc @danburtenshaw
+          EOF
+          )
+
+          # Ensure the label exists (idempotent).
+          gh label create e2e-failure \
+            --repo "${REPO}" \
+            --color b60205 \
+            --description "Automated: scheduled E2E run failed" \
+            --force >/dev/null
+
+          # Reuse an open issue with the e2e-failure label so we don't
+          # spam a new issue per failed run. If none open, create one.
+          existing=$(gh issue list \
+            --repo "${REPO}" \
+            --state open \
+            --label e2e-failure \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [[ -n "${existing}" ]]; then
+            echo "appending to existing issue #${existing}"
+            gh issue comment "${existing}" --repo "${REPO}" --body "${body}"
+            gh issue edit "${existing}" --repo "${REPO}" --add-assignee danburtenshaw >/dev/null || true
+          else
+            echo "opening new issue"
+            gh issue create \
+              --repo "${REPO}" \
+              --title "${title}" \
+              --body "${body}" \
+              --label e2e-failure \
+              --assignee danburtenshaw
+          fi

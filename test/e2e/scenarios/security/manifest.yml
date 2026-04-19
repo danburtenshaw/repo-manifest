@@ -1,0 +1,10 @@
+version: 1
+
+# Turns every security toggle on. Secret scanning and push protection
+# are only free on public repos (the sandbox is public for this reason).
+
+security:
+  vulnerability_alerts: true
+  automated_security_fixes: true
+  secret_scanning: true
+  secret_scanning_push_protection: true

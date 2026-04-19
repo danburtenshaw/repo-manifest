@@ -1,0 +1,14 @@
+version: 1
+
+# Exercises the metadata resource: description, homepage, topic set,
+# and visibility are all distinct from the baseline.
+
+metadata:
+  description: "Scenario: metadata changes. Different description, homepage, and topic set."
+  homepage: "https://github.com/danburtenshaw/repo-manifest"
+  topics:
+    - e2e
+    - sandbox
+    - metadata-scenario
+    - declarative
+  visibility: public

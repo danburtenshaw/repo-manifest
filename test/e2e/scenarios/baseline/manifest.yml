@@ -1,0 +1,45 @@
+version: 1
+
+# Baseline sandbox state. Re-applied before and after every scenario so
+# tests start from a known, empty-ish configuration.
+#
+# Intentionally declarative-total: empty labels and rulesets arrays cause
+# full reconciliation to delete anything a prior scenario left behind.
+
+metadata:
+  description: "E2E test sandbox for danburtenshaw/repo-manifest. Mutated by scheduled tests; do not rely on its state."
+  homepage: ""
+  topics:
+    - e2e
+    - sandbox
+  visibility: public
+
+features:
+  issues: true
+  wiki: true
+  projects: true
+  discussions: false
+
+merge:
+  allow_squash: true
+  allow_merge_commit: true
+  allow_rebase: true
+  allow_auto_merge: false
+  delete_branch_on_merge: false
+
+security:
+  vulnerability_alerts: true
+  automated_security_fixes: true
+  secret_scanning: false
+  secret_scanning_push_protection: false
+
+labels:
+  items: []
+
+variables:
+  items: []
+
+secrets:
+  items: []
+
+rulesets: []

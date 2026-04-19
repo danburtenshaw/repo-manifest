@@ -1,0 +1,42 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    ":semanticCommitTypeAll(deps)",
+    ":automergePatch",
+    ":automergeMinor",
+    "group:allNonMajor",
+    "schedule:weekly"
+  ],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "rebaseWhen": "conflicted",
+  "packageRules": [
+    {
+      "description": "Automerge devDependency updates",
+      "matchDepTypes": ["devDependencies"],
+      "automerge": true
+    },
+    {
+      "description": "Group and automerge GitHub Actions (digests pinned via helpers:pinGitHubActionDigests)",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "automerge": true
+    },
+    {
+      "description": "Group Octokit packages",
+      "matchPackageNames": ["@octokit/**"],
+      "groupName": "octokit"
+    },
+    {
+      "description": "Group commitlint packages",
+      "matchPackageNames": ["@commitlint/**"],
+      "groupName": "commitlint"
+    },
+    {
+      "description": "Group @types packages",
+      "matchPackageNames": ["@types/**"],
+      "groupName": "types"
+    }
+  ]
+}

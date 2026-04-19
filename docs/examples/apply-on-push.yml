@@ -1,0 +1,25 @@
+# Apply the manifest on every push to main that touches the config.
+# Conventional one-shot "reconcile on save" workflow.
+name: Repo Manifest Apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/repo-manifest.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: danburtenshaw/repo-manifest@v1
+        with:
+          token: ${{ secrets.REPO_MANIFEST_TOKEN }}
+          mode: apply

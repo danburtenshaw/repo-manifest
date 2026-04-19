@@ -1,0 +1,7 @@
+name: CodeQL config
+
+# The dist/ bundle is generated build output committed for the Actions
+# runtime. Scan the source, not the compiled artifact.
+paths-ignore:
+  - dist
+  - "**/*.test.ts"

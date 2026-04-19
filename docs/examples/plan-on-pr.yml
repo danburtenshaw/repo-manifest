@@ -1,0 +1,30 @@
+# Preview the manifest diff on every pull request that touches it.
+# Posts a sticky comment so reviewers see what will change.
+name: Repo Manifest Plan
+
+on:
+  pull_request:
+    paths:
+      - ".github/repo-manifest.yml"
+
+permissions: {}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # `pull-requests: write` lets the built-in GITHUB_TOKEN post the
+    # plan comment, so it's authored by github-actions[bot] rather
+    # than whoever owns REPO_MANIFEST_TOKEN. Override with the
+    # `comment-token` input if you want a different identity — see
+    # docs/authentication.md → "Comment identity".
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: danburtenshaw/repo-manifest@v1
+        with:
+          token: ${{ secrets.REPO_MANIFEST_TOKEN }}
+          mode: plan
+          comment-on-pr: "true"

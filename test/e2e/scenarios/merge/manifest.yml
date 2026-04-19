@@ -1,0 +1,14 @@
+version: 1
+
+# Squash-only with auto-merge and branch deletion. Exercises both the
+# boolean toggles and the commit-title/message enum fields, which round-trip
+# through different API endpoints than the simple booleans.
+
+merge:
+  allow_squash: true
+  allow_merge_commit: false
+  allow_rebase: false
+  allow_auto_merge: true
+  delete_branch_on_merge: true
+  squash_commit_title: PR_TITLE
+  squash_commit_message: PR_BODY

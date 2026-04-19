@@ -1,0 +1,25 @@
+# Fail the workflow if the repository drifts from its manifest.
+# Ran daily; wire into your alerting via GitHub's usual
+# "workflow failed" notification.
+name: Repo Manifest Drift
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: danburtenshaw/repo-manifest@v1
+        with:
+          token: ${{ secrets.REPO_MANIFEST_TOKEN }}
+          mode: drift
+          fail-on-drift: "true"

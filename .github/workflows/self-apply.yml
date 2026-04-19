@@ -1,0 +1,65 @@
+name: Self Apply
+
+# Reconcile the live repo with .github/repo-manifest.yml after changes
+# merge to main. The PR's self-test.yml already showed the plan to
+# reviewers; merging is the approval — this workflow just closes the loop.
+#
+# Gated on the same paths as self-test: a code or manifest change can
+# affect what gets synced, and we want the merge commit to reconcile it.
+#
+# Safety: main-branch-protection enforces strict_required_status_checks_policy,
+# meaning PR branches must be up to date with main before merge. So the
+# plan reviewers saw on the PR is the plan that runs here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "dist/**"
+      - ".github/repo-manifest.yml"
+      - "action.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # Serialise merges so a fast follow-up doesn't race a previous apply.
+  # cancel-in-progress: false because an aborted half-apply leaves the
+  # repo in a worse state than queueing.
+  group: self-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ vars.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run repo-manifest in apply mode
+        uses: ./
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          mode: apply
+          comment-on-pr: "false"

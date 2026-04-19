@@ -1,0 +1,9 @@
+version: 1
+
+# Flips every feature toggle from the baseline.
+
+features:
+  issues: false
+  wiki: false
+  projects: false
+  discussions: true

@@ -1,0 +1,21 @@
+version: 1
+
+# Full reconciliation of Actions variables against a seeded mix of
+# keep / update / ignore / delete candidates. Baseline applies
+# `variables.items: []` before this scenario, so the starting state
+# has zero variables; `seed.sh` creates the out-of-band test fixtures
+# that exercise every diff branch.
+
+variables:
+  ignore_patterns:
+    - "E2E_IGNORED_*"
+  items:
+    # Seeded with value "stale" — apply must update it to "fresh".
+    - name: E2E_VAR_UPDATE
+      value: fresh
+    # Not seeded — apply must create it.
+    - name: E2E_VAR_CREATE
+      value: created-by-apply
+    # Seeded with the matching value — apply must be a no-op here.
+    - name: E2E_VAR_KEEP
+      value: unchanged

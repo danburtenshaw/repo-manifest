@@ -1,0 +1,44 @@
+name: "Repo Manifest"
+description: "Sync GitHub repository settings from a declarative config file"
+author: "Dan Burtenshaw"
+branding:
+  icon: "git-branch"
+  color: "purple"
+inputs:
+  token:
+    description: "GitHub token with repo admin permissions. Used for all settings reads/writes."
+    required: true
+  comment-token:
+    description: |
+      Token used to post the plan comment on pull requests. Defaults to the
+      workflow's built-in GITHUB_TOKEN so the comment is authored by
+      github-actions[bot] rather than the owner of `token`. Your job needs
+      `permissions: pull-requests: write` for the default to work. Set
+      explicitly to override (e.g., a PAT or GitHub App token for a
+      custom bot identity). Falls back to `token` if empty.
+    required: false
+    default: ${{ github.token }}
+  config:
+    description: "Path to the manifest file"
+    required: false
+    default: ".github/repo-manifest.yml"
+  mode:
+    description: "plan | apply | drift"
+    required: false
+    default: "plan"
+  comment-on-pr:
+    description: "Post plan as a PR comment when run on pull_request"
+    required: false
+    default: "true"
+  fail-on-drift:
+    description: "When mode=drift, exit non-zero if drift is detected"
+    required: false
+    default: "true"
+outputs:
+  plan:
+    description: "JSON-encoded plan summary"
+  changed:
+    description: "true if any changes were detected or applied"
+runs:
+  using: "node24"
+  main: "dist/index.mjs"

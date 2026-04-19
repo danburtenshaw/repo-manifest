@@ -1,0 +1,17 @@
+version: 1
+
+# Full reconciliation of Actions secrets against a seeded mix of
+# keep / ignore / delete candidates. Secret values are write-only at
+# the GitHub API, so this scenario deliberately has NO declared-but-
+# missing (`pending`) secrets — every declared name is seeded before
+# apply so the idempotency check (plan after apply reports no changes)
+# passes. Unit tests cover the `pending` diff branch.
+
+secrets:
+  ignore_patterns:
+    - "E2E_IGNORED_*"
+  items:
+    # Seeded with a dummy value before apply — apply must not touch it
+    # (manual source never writes values) and must not delete it.
+    - name: E2E_SECRET_KEEP
+      source: manual

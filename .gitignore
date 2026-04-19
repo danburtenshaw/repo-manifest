@@ -1,0 +1,34 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+*.log
+.pnpm-store/
+
+# Vite+
+.vite-plus/
+.vite/
+.vite-cache/
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor — keep shared workspace settings; drop personal overrides
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Claude Code (share settings.json; keep local/personal overrides out)
+.claude/settings.local.json
+.claude/worktrees/

@@ -1,0 +1,16 @@
+version: 1
+
+# Tests ignore_patterns: labels matching these patterns must survive
+# full reconciliation even though they're not declared in `items`.
+# `seed.sh` creates the rogue labels out-of-band before apply runs,
+# simulating labels created by bots (Renovate, release-please, etc.).
+
+labels:
+  ignore_patterns:
+    - "dependencies"
+    - "renovate/*"
+    - "autorelease: *"
+  items:
+    - name: keep-me
+      color: 0e8a16
+      description: "Declared in the manifest; must be kept."

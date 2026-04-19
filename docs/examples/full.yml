@@ -1,0 +1,95 @@
+# Comprehensive example exercising every section of the v1 schema.
+# Copy the sections you need into your own .github/repo-manifest.yml.
+# yaml-language-server: $schema=https://raw.githubusercontent.com/danburtenshaw/repo-manifest/main/schema/v1.json
+version: 1
+
+metadata:
+  description: "A descriptive one-liner about the repo."
+  homepage: "https://example.com"
+  topics:
+    - infrastructure
+    - tooling
+    - typescript
+  visibility: public
+
+features:
+  issues: true
+  wiki: false
+  projects: false
+  discussions: true
+
+merge:
+  allow_squash: true
+  allow_merge_commit: false
+  allow_rebase: false
+  allow_auto_merge: true
+  delete_branch_on_merge: true
+  squash_commit_title: PR_TITLE
+  squash_commit_message: PR_BODY
+
+security:
+  vulnerability_alerts: true
+  automated_security_fixes: true
+  secret_scanning: true
+  secret_scanning_push_protection: true
+
+labels:
+  ignore_patterns:
+    - "dependencies"
+    - "renovate/*"
+  items:
+    - name: bug
+      color: d73a4a
+      description: "Something isn't working"
+    - name: enhancement
+      color: a2eeef
+      description: "New feature or request"
+    - name: documentation
+      color: 0075ca
+      description: "Improvements or additions to documentation"
+
+variables:
+  ignore_patterns:
+    - "EXTERNAL_*"
+  items:
+    - name: NODE_ENV
+      value: production
+    - name: LOG_LEVEL
+      value: info
+
+secrets:
+  # Many "secrets" are better handled by OIDC — see docs/configuration.md.
+  ignore_patterns:
+    - "DEPENDABOT_*"
+  items:
+    - name: DEPLOY_APP_KEY
+      source: manual
+    - name: NPM_PUBLISH_TOKEN
+      source: manual
+
+rulesets:
+  - name: main-branch-protection
+    target: branch
+    enforcement: active
+    conditions:
+      ref_name:
+        include: ["~DEFAULT_BRANCH"]
+        exclude: []
+    rules:
+      pull_request:
+        required_approving_review_count: 1
+        dismiss_stale_reviews_on_push: true
+        require_code_owner_review: true
+      required_status_checks:
+        strict_required_status_checks_policy: true
+        required_checks:
+          - context: "ci / check"
+          - context: "ci / test"
+      code_scanning:
+        tools:
+          - tool: CodeQL
+            security_alerts_threshold: medium_or_higher
+            alerts_threshold: errors
+      non_fast_forward: true
+      deletion: true
+      required_linear_history: true
